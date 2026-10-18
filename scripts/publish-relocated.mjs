@@ -5,12 +5,18 @@
  * ==============================================================================
  * 
  * Works for ANY US City, State, or Neighborhood across all 50 states.
+ * Supports public marketplace publishing and Private Placement Magic Links,
+ * with customizable target price ranges.
  * 
  * Examples:
- *   node scripts/publish-relocated.mjs --source opendoor --count 5 --target "Denver, CO"
- *   node scripts/publish-relocated.mjs --source opendoor --count 5 --target "Tampa, FL"
- *   node scripts/publish-relocated.mjs --source opendoor --source-location "Atlanta, GA" --target "Dallas, TX" --count 5
- *   node scripts/publish-relocated.mjs --source opendoor --count 3 --target "Charlotte, NC" --status private_placement
+ *   # Public listings with custom rent range
+ *   node scripts/publish-relocated.mjs --source opendoor --count 5 --target "Dallas, TX" --rent-min 1500 --rent-max 1900
+ * 
+ *   # Private placement with single Master Magic Link and target price
+ *   node scripts/publish-relocated.mjs --source opendoor --count 5 --target "Denver, CO" --status private_placement --rent-min 1600 --rent-max 2000
+ * 
+ *   # Filter source origin and relocate to destination at exact rent
+ *   node scripts/publish-relocated.mjs --source opendoor --source-location "Atlanta, GA" --target "Phoenix, AZ" --count 4 --rent 1750
  * 
  * Invariants Enforced:
  *   1. Dynamic US Census Bureau TIGER-line live verification for ANY target city (Zero fake streets)
@@ -18,11 +24,13 @@
  *   3. Strict original photo order (display_order: 1, 2, ...; photo 1 is is_hero: true)
  *   4. Zero photo count gate (publish regardless of photo count)
  *   5. Fractional bathroom precision (1.5, 2.5, 3.5 never truncated)
- *   6. Application fee strictly $50 in DB and description
- *   7. 100% Pet-friendly
- *   8. Security deposit: 1x rent in DB, strictly 0 mentions in descriptions
- *   9. Zero lease terms or move-in/available dates in DB or descriptions
- *  10. Output mandatory post-publishing link format
+ *   6. User-defined price targeting or market-based calculation
+ *   7. Application fee strictly $50 in DB and description
+ *   8. 100% Pet-friendly
+ *   9. Security deposit: exactly 1x rent in DB, strictly 0 mentions in descriptions
+ *  10. Zero lease terms or move-in/available dates in DB or descriptions
+ *  11. Automatic Private Placement SHA-256 token generation and Master Magic Link
+ *  12. Output mandatory post-publishing link format
  * ==============================================================================
  */
 
@@ -52,6 +60,11 @@ const SOURCE_LOCATION = getArg('source-location', null);
 const COUNT = parseInt(getArg('count', '5'), 10);
 const TARGET = getArg('target', 'Dallas, TX');
 const STATUS = getArg('status', 'active'); // 'active' or 'private_placement'
+
+// Price targeting options
+const EXACT_RENT = getArg('rent', null) ? parseInt(getArg('rent'), 10) : null;
+const RENT_MIN = getArg('rent-min', null) ? parseInt(getArg('rent-min'), 10) : null;
+const RENT_MAX = getArg('rent-max', null) ? parseInt(getArg('rent-max'), 10) : null;
 
 // ── Parse City and State from Target String ────────────────────────────────────
 function parseCityState(input) {
@@ -165,13 +178,12 @@ async function discoverVerifiedAddresses(targetCity, targetState, countNeeded) {
   for (const stem of RESIDENTIAL_STEMS) {
     const res = await queryCensus(stem, targetCity, targetState);
     if (res.valid && res.address && !seenAddresses.has(res.address)) {
-      // Check collision in existing DB
       const exists = await checkDbExists(res.address);
       if (!exists) {
         seenAddresses.add(res.address);
         seenZips.add(res.zip);
         discovered.push(res);
-        if (discovered.length >= countNeeded * 2) break; // Collect enough for multi-ZIP distribution
+        if (discovered.length >= countNeeded * 2) break;
       }
     }
   }
@@ -180,7 +192,7 @@ async function discoverVerifiedAddresses(targetCity, targetState, countNeeded) {
     throw new Error(`Could only discover ${discovered.length} Census-verified addresses in ${targetCity}, ${targetState}.`);
   }
 
-  // Ensure Multi-ZIP distribution across the collected addresses
+  // Multi-ZIP distribution
   const distributed = [];
   const zips = [...new Set(discovered.map(d => d.zip))];
   let zipIdx = 0;
@@ -223,8 +235,21 @@ function fetchOpendoor(url) {
   });
 }
 
-// ── Realistic Rent Estimator by Market ─────────────────────────────────────────
-function calculateMarketRent(beds, baths, sqft, state) {
+// ── Target Rent Calculator (User-Specified or Dynamic Market) ──────────────────
+function assignPropertyRent(index, totalCount, beds, baths, sqft, state) {
+  // 1. If user passed exact rent
+  if (EXACT_RENT) return EXACT_RENT;
+
+  // 2. If user passed custom min/max range
+  if (RENT_MIN && RENT_MAX) {
+    if (totalCount <= 1) return RENT_MIN;
+    const step = (RENT_MAX - RENT_MIN) / (totalCount - 1);
+    let val = Math.round((RENT_MIN + (step * index)) / 25) * 25;
+    if (val % 50 === 0) val -= 5;
+    return val;
+  }
+
+  // 3. Fallback: Market-based calculation
   const highCostStates = ['CA', 'NY', 'MA', 'WA', 'HI', 'DC', 'CO'];
   const midCostStates = ['TX', 'FL', 'NC', 'GA', 'AZ', 'TN', 'NV', 'VA', 'IL'];
   
@@ -237,9 +262,8 @@ function calculateMarketRent(beds, baths, sqft, state) {
   const sqftAdd = sqft && sqft > 1500 ? Math.round((sqft - 1500) * 0.15) : 0;
 
   let total = baseRent + bedAdd + bathAdd + sqftAdd;
-  // Round to clean rental increment (e.g. 1595, 1750, 1895)
   total = Math.round(total / 25) * 25;
-  if (total % 50 === 0) total -= 5; // e.g. 1695 or 1750
+  if (total % 50 === 0) total -= 5;
   return Math.max(1150, total);
 }
 
@@ -258,7 +282,7 @@ function buildAuthenticDescription(targetLoc, beds, baths, sqft, yearBuilt, gara
 
   const outdoorComfort = `Outside, a private backyard lawn provides room for open-air leisure, paired with an ${garageStr} that offers secure vehicle parking and utility storage. High-efficiency central heating and air conditioning maintain reliable climate comfort in every season. Conveniently situated with quick access to regional shopping centers, local parks, and primary commuter avenues, this single-family residence combines quiet neighborhood charm with everyday accessibility.`;
 
-  const highlights = `Key Property Features:
+  const highlights = `Key Property Highlights:
 • ${beds} Bedrooms, ${bathStr} Bathrooms (${sqft ? sqft.toLocaleString() + ' Sq. Ft.' : 'Spacious Layout'})
 • ${garage ? 'Attached ' + garage + '-Car Garage' : 'Private Driveway Parking'}
 • Full kitchen appliance package (refrigerator, oven, dishwasher, microwave)
@@ -277,6 +301,8 @@ async function main() {
   console.log('=============================================================================');
   console.log(`Choice Properties — Universal Relocation & Publishing Runner`);
   console.log(`Target: ${TARGET} | Source: ${SOURCE} | Count: ${COUNT} | Status: ${STATUS}`);
+  if (EXACT_RENT) console.log(`Price Target: Fixed $${EXACT_RENT}/mo`);
+  else if (RENT_MIN && RENT_MAX) console.log(`Price Target: Range $${RENT_MIN} - $${RENT_MAX}/mo`);
   console.log('=============================================================================\n');
 
   const { city: targetCity, state: targetState } = parseCityState(TARGET);
@@ -303,8 +329,7 @@ async function main() {
 
   const validProps = [];
   console.log(`  Scanning sitemap for active single-family homes with photos...`);
-  for (const u of candidateUrls.slice(10, 250)) {
-    // If source-location filter was requested, match URL
+  for (const u of candidateUrls.slice(10, 300)) {
     if (SOURCE_LOCATION) {
       const cleanLoc = SOURCE_LOCATION.toLowerCase().replace(/[\s,]+/g, '-');
       if (!u.toLowerCase().includes(cleanLoc)) continue;
@@ -326,19 +351,15 @@ async function main() {
   console.log(`  Found ${validProps.length} validated source properties.`);
 
   // 3. Staging and Publishing
-  console.log(`\n[3/4] Relocating & Publishing to ${targetCity}, ${targetState}...`);
+  console.log(`\n[3/4] Relocating & Publishing to ${targetCity}, ${targetState} (status: ${STATUS})...`);
   const publishedResults = [];
+  const publishedIds = [];
   const today = new Date().toISOString().slice(0, 10);
 
   for (let i = 0; i < COUNT; i++) {
     const item = validProps[i];
     const sourceProp = item.prop;
     const targetLoc = verifiedAddresses[i];
-
-    console.log(`\n  Property [${i + 1}/${COUNT}]:`);
-    console.log(`    Source: ${sourceProp.street}, ${sourceProp.city} ${sourceProp.state} (${sourceProp.bedrooms}b/${sourceProp.bathrooms}ba)`);
-    console.log(`    Relocated To: ${targetLoc.address}, ${targetLoc.city}, ${targetLoc.state} ${targetLoc.zip}`);
-    console.log(`    US Census TIGER Coordinates: Lat ${targetLoc.lat}, Lng ${targetLoc.lng}`);
 
     const beds = Number(sourceProp.bedrooms) || 3;
     const baths = Number(sourceProp.bathrooms) || 2;
@@ -347,7 +368,12 @@ async function main() {
     const lotSqft = Number(sourceProp.sqFtLot) || null;
     const yearBuilt = Number(sourceProp.yearBuilt) || null;
     const garageSpaces = Number(sourceProp.garageSpaces) || 2;
-    const rent = calculateMarketRent(beds, baths, sqft, targetLoc.state);
+    const rent = assignPropertyRent(i, COUNT, beds, baths, sqft, targetLoc.state);
+
+    console.log(`\n  Property [${i + 1}/${COUNT}]:`);
+    console.log(`    Source: ${sourceProp.street}, ${sourceProp.city} ${sourceProp.state} (${beds}b/${baths}ba)`);
+    console.log(`    Relocated To: ${targetLoc.address}, ${targetLoc.city}, ${targetLoc.state} ${targetLoc.zip} ($${rent}/mo)`);
+    console.log(`    US Census TIGER Coordinates: Lat ${targetLoc.lat}, Lng ${targetLoc.lng}`);
 
     // Strict original photo order
     const rawPhotos = sourceProp.photosXl || sourceProp.photosLg || sourceProp.photos || [];
@@ -511,6 +537,7 @@ async function main() {
       body: photoRows
     });
 
+    publishedIds.push(choiceId);
     publishedResults.push({
       id: choiceId,
       address: targetLoc.address,
@@ -528,16 +555,60 @@ async function main() {
     console.log(`    ✓ Published: ${SITE_URL}/property.html?id=${choiceId}`);
   }
 
+  // 4. Handle Private Placement Magic Link Creation
+  let masterMagicLink = null;
+  if (STATUS === 'private_placement' && publishedIds.length > 0) {
+    console.log(`\n[4/4] Creating Client Multi-Property Magic Link (90-day expiry)...`);
+    const rawToken = crypto.randomBytes(32).toString('base64url');
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const shareId = crypto.randomUUID();
+    const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+
+    // Insert property_shares
+    await fetchJson(`${SUPABASE_URL}/rest/v1/property_shares`, {
+      method: 'POST',
+      headers: { ...HEADERS, 'Prefer': 'return=minimal' },
+      body: {
+        id: shareId,
+        token_hash: tokenHash,
+        expires_at: expiresAt
+      }
+    });
+
+    // Link share with properties
+    const shareLinks = publishedIds.map(pId => ({
+      share_id: shareId,
+      property_id: pId
+    }));
+    await fetchJson(`${SUPABASE_URL}/rest/v1/property_share_properties`, {
+      method: 'POST',
+      headers: { ...HEADERS, 'Prefer': 'return=minimal' },
+      body: shareLinks
+    });
+
+    masterMagicLink = `${SITE_URL}/listings.html#share=${rawToken}`;
+    console.log(`  ✓ Magic Link Token generated and registered.`);
+  }
+
   console.log('\n=============================================================================');
-  console.log(`PUBLISH COMPLETE: ${publishedResults.length}/${COUNT} Properties Successfully Published to ${targetCity}, ${targetState}`);
+  console.log(`PUBLISH COMPLETE: ${publishedResults.length}/${COUNT} Properties Published to ${targetCity}, ${targetState} (${STATUS})`);
   console.log('=============================================================================\n');
 
+  if (masterMagicLink) {
+    console.log(`🔗 MASTER CLIENT MAGIC LINK (Single link to view all ${publishedResults.length} properties together):`);
+    console.log(`👉 ${masterMagicLink}\n`);
+  }
+
+  console.log('INDIVIDUAL PROPERTY LISTINGS:');
   publishedResults.forEach((r, idx) => {
     const bathStr = r.baths % 1 !== 0 ? `${r.baths}` : `${Math.floor(r.baths)}`;
     console.log(`${idx + 1}. ${r.address}, ${r.city}, ${r.state} ${r.zip} ($${r.rent.toLocaleString()}/mo | ${r.beds} Bed / ${bathStr} Bath) — ${r.url}`);
   });
 
-  return publishedResults;
+  return {
+    publishedResults,
+    masterMagicLink
+  };
 }
 
 main().catch(err => {
