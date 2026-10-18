@@ -1,17 +1,24 @@
 # AI Agent Guide — Choice Properties Pipeline
 
-> ### 🚀 DIRECTIVE — ADDRESS CHANGING & SYNTHETIC RELOCATION ENABLED (VERIFIED MUNICIPAL STREET PROTOCOL)
+> ### 🚀 DIRECTIVE — UNIVERSAL RELOCATION, ZERO PHOTO GATE & STRICT CROSS-LOCATION SOURCING
 > **STATUS: FULLY ENABLED ACROSS ENTIRE PROJECT & PIPELINE (OWNER AUTHORIZED)**
 > 
-> 1. **Address Changing / Aliasing & Synthetic Relocation Enabled**:
->    - Address changing, same-block aliasing (+8 offset), and synthetic cross-city relocation are **ACTIVE AND FULLY ENABLED** across the pipeline, admin tools (`#pl-relocate-modal` & `#pl-bulk-relocate-modal`), `/api/relocate`, and publishing workflows.
->    - **Verified Municipal Street Mapping Protocol**: When relocating properties cross-city (e.g. from Dallas to Yukon, OK 73099), addresses must strictly use verified real residential streets and parcel ranges recognized by municipal and postal geocoders (e.g. `704 Oak Ave`, `820 Elm Ave`, `412 Holly Ave`, `624 Cedar Ave`, `408 S 8th St`, `3216 Vandament Ave`), paired with exact verified GPS coordinates. Synthetic or unverified street names are strictly prohibited. Original source identifiers remain preserved in pipeline metadata/legal address.
->    - **Multi-ZIP Geographic Distribution Rule**: When publishing or relocating to a designated target location/city (e.g. Yukon, OK), you must NOT publish all properties in the same single ZIP code. Distribute the properties across the different valid residential ZIP codes covering that municipality and its adjacent residential corridors (e.g. for Yukon: `73099`, `73127`, `73132`, `73064`), unless the user explicitly mandates a single specified ZIP code (e.g. "all in 73099").
+> 1. **Universal Relocation & Census Verified Municipal Street Protocol**:
+>    - Address changing and synthetic cross-city relocation are **ACTIVE AND FULLY ENABLED** across all 50 states and any municipality.
+>    - Addresses must strictly use real residential streets and parcel ranges verified against the official **US Census Bureau TIGER-line geocoder**, paired with exact live rooftop coordinates. Synthetic or unverified street names are strictly prohibited.
+>    - **STRICT Cross-Location Sourcing Rule**: NEVER scrape properties from the destination market/state itself. Always scrape from an external source state/city (e.g. TX, GA, CO, AZ, FL) when relocating to the target area (e.g. NC, OK) so that no local MLS reverse-lookups can collide.
+>    - **Multi-ZIP Geographic Distribution Rule**: Distribute properties across valid residential ZIP codes covering the target municipality and adjacent corridors.
 > 
-> 2. **Image Reordering Disabled — Strict Original Order**:
->    - Automated image reordering (such as shifting exterior photos deeper or promoting interior/kitchen photos to hero) is **COMPLETELY DISABLED**.
->    - **All images must be ordered exactly as they came from the original source.**
->    - The first image from the original listing/feed must remain the primary hero cover photo (`display_order: 0` / `is_hero: true`).
+> 2. **Zero Photo Count Gate (Permanent Removal of Photo Count Restrictions)**:
+>    - The photo count gate is **PERMANENTLY REMOVED** across the entire project.
+>    - Accept and publish listings with ANY number of authentic source photos (even 5, 4, etc.).
+>    - Never skip or drop properties due to photo counts.
+> 
+> 3. **Image Reordering Disabled — Strict Original Order**:
+>    - Automated image reordering is **COMPLETELY DISABLED**.
+>    - All images must be ordered exactly as they came from the original source feed/listing.
+>    - The first image from the source must remain the primary hero cover photo (`display_order: 1` / `is_hero: true`).
+>    - Ingest high-resolution source CDN photo URLs directly. Do not upload to ImageKit.
 > 
 > **Read this first.** This file tells you everything you need to know to scrape,
 > enrich, and publish rental listings to the Choice Properties website.
@@ -85,14 +92,14 @@ python3 scraper/run_ai_job.py \
      2. Filter active/available + deduplicate
      3. Apply criteria filters + watermark detection
      4. Apply pricing rules
-     5. Verify 6+ source photos
+     5. Verify source photos (Zero photo count gate — any photo count accepted)
      6. Enrich (clean descriptions, normalize fees, add CTA, etc.)
      7. Pre-publish validation
      8. Stage in pipeline_properties
      9. Patch pricing + description
      10. Publish via RPC
      11. Activate property
-     12. Upload photos to ImageKit
+     12. Ingest high-res CDN photos directly (no ImageKit upload delay)
      13. Return live URLs
 
 5. YOU RETURN LIVE URLS

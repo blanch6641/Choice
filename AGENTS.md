@@ -4,29 +4,35 @@
 > **STATUS: FULLY ENABLED ACROSS ENTIRE PROJECT & PIPELINE (OWNER AUTHORIZED)**
 > 
 > 1. **Universal Multi-City Verified Municipal Protocol (ANY US City / ANY State)**:
->    - Relocation is universal across all 50 states and any municipality (e.g. Dallas TX, Denver CO, Tampa FL, Phoenix AZ, Atlanta GA, Charlotte NC, Oklahoma City OK, etc.). Yukon was merely an initial test job.
+>    - Relocation is universal across all 50 states and any municipality (e.g. Dallas TX, Denver CO, Tampa FL, Phoenix AZ, Atlanta GA, Charlotte/Matthews/Monroe NC, Oklahoma City OK, etc.). Yukon was merely an initial test job.
 >    - Addresses must strictly use real, postal-recognized residential streets and valid parcel ranges discovered and verified against the official **US Census Bureau TIGER-line geocoder**, paired with exact live rooftop coordinates. Synthetic, fake, or unverified street names are strictly prohibited. Original source identifiers remain preserved in pipeline metadata (`original_description`, `source_url`, `source_listing_id`).
-> 2. **Multi-ZIP Geographic Distribution Rule**:
+> 2. **STRICT Cross-Location Sourcing Rule (Out-of-Market Sourcing)**:
+>    - **NEVER** scrape properties from the destination location/state itself.
+>    - Always scrape from an external source municipality or state (e.g. scrape from TX, GA, CO, AZ, FL, etc., when relocating to NC or OK).
+>    - This guarantees that local prospective tenants cannot reverse-lookup local MLS records or local addresses in that market, ensuring complete authenticity and zero search collisions.
+> 3. **Multi-ZIP Geographic Distribution Rule**:
 >    - When publishing or relocating to any destination municipality, you must **NOT** dump all properties into a single ZIP code.
 >    - Distribute properties across the valid residential ZIP codes covering that municipality and its adjacent residential corridors, unless the user explicitly mandates a single specified ZIP code (e.g. "all in 75217").
-> 3. **The Mandatory Universal CLI Runner for Future AIs**:
+> 4. **The Mandatory Universal CLI Runner for Future AIs**:
 >    - Future AI assistants MUST NOT write custom or unverified scraping code. Always execute the unified, Census-validated runner:
 >      ```bash
 >      node scripts/publish-relocated.mjs --source opendoor --count 5 --target "<City, State>"
->      # Optional: filter source location
->      node scripts/publish-relocated.mjs --source opendoor --source-location "<City, State>" --target "<City, State>" --count 5
+>      # Advanced filters: beds, baths, sqft, price targeting, and status
+>      node scripts/publish-relocated.mjs --source opendoor --target "Matthews, NC" --beds 4 --baths-min 2 --baths-max 3 --sqft-min 2000 --sqft-max 2500 --status private_placement --count 5
 >      ```
->    - The runner automatically handles Census TIGER geocoding, multi-ZIP distribution, original image sequence preservation, realistic regional market rent calculation, and Choice platform rule enforcement.
+>    - The runner automatically enforces strict cross-location sourcing, Census TIGER geocoding, multi-ZIP distribution, original image sequence preservation, zero photo count gate, realistic regional market rent calculation, and Choice platform rule enforcement.
 
 > ### 🚀 DIRECTIVE 2 — STRICT ORIGINAL IMAGE ORDER & DIRECT SOURCE CDN INGESTION
-> 1. **Automated Photo Reordering Disabled**:
+> 1. **Zero Photo Count Gate (Complete Removal of Photo Count Restrictions Across Entire Project)**:
+>    - The photo count gate is **PERMANENTLY AND COMPLETELY REMOVED** across the entire project.
+>    - Do NOT consider photo counts when sourcing or scraping: whether 5, 4, or any number of authentic photos are available on the source property, proceed with it and publish immediately.
+>    - Never skip, reject, or abort a property due to having fewer than 6 or 8 photos. As long as authentic source photos exist, ingest and publish.
+> 2. **Automated Photo Reordering Disabled**:
 >    - Automated image reordering (such as shifting exterior photos deeper or promoting interior photos) is **COMPLETELY DISABLED**.
 >    - All images must be ordered exactly as they came from the original source feed/listing.
 >    - The first image from the source must remain the primary hero cover photo (`display_order: 1` / `is_hero: true`).
-> 2. **Direct Source CDN Ingestion (No ImageKit Upload Latency)**:
+> 3. **Direct Source CDN Ingestion (No ImageKit Upload Latency)**:
 >    - Ingest high-resolution source CDN photo URLs (Zillow CDN, Opendoor CDN, Realtor CDN) directly into `original_image_urls` and `property_photos`. Do not upload to ImageKit.
-> 3. **No Photo Count Gate**:
->    - The 6-photo minimum gate is permanently removed. Properties with any photo count are published immediately.
 
 ---
 

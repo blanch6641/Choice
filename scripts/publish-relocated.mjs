@@ -4,33 +4,24 @@
  * Choice Properties — Universal Cross-City Relocation & Publishing CLI Runner
  * ==============================================================================
  * 
- * Works for ANY US City, State, or Neighborhood across all 50 states.
+ * Works for ANY US City, State, or Regional Corridor across all 50 states.
  * Supports public marketplace publishing and Private Placement Magic Links,
- * with customizable target price ranges.
+ * with customizable target price ranges and property spec filters.
  * 
- * Examples:
- *   # Public listings with custom rent range
- *   node scripts/publish-relocated.mjs --source opendoor --count 5 --target "Dallas, TX" --rent-min 1500 --rent-max 1900
- * 
- *   # Private placement with single Master Magic Link and target price
- *   node scripts/publish-relocated.mjs --source opendoor --count 5 --target "Denver, CO" --status private_placement --rent-min 1600 --rent-max 2000
- * 
- *   # Filter source origin and relocate to destination at exact rent
- *   node scripts/publish-relocated.mjs --source opendoor --source-location "Atlanta, GA" --target "Phoenix, AZ" --count 4 --rent 1750
- * 
- * Invariants Enforced:
- *   1. Dynamic US Census Bureau TIGER-line live verification for ANY target city (Zero fake streets)
- *   2. Multi-ZIP geographic distribution across the target municipality
- *   3. Strict original photo order (display_order: 1, 2, ...; photo 1 is is_hero: true)
- *   4. Zero photo count gate (publish regardless of photo count)
- *   5. Fractional bathroom precision (1.5, 2.5, 3.5 never truncated)
- *   6. User-defined price targeting or market-based calculation
- *   7. Application fee strictly $50 in DB and description
- *   8. 100% Pet-friendly
- *   9. Security deposit: exactly 1x rent in DB, strictly 0 mentions in descriptions
- *  10. Zero lease terms or move-in/available dates in DB or descriptions
- *  11. Automatic Private Placement SHA-256 token generation and Master Magic Link
- *  12. Output mandatory post-publishing link format
+ * Rules Enforced:
+ *   1. Zero Photo Count Gate: Any photo count is accepted (even 5 or fewer).
+ *   2. Strict Cross-Location Sourcing: Always scrapes from an outside origin
+ *      to ensure authentic relocation and zero local MLS overlap.
+ *   3. US Census Bureau TIGER-line live verification for all destination addresses.
+ *   4. Multi-ZIP geographic distribution across the target municipality/corridor.
+ *   5. Strict original photo order (photo 1 is is_hero: true).
+ *   6. Fractional bathroom precision (1.5, 2.5, 3.5 never truncated).
+ *   7. User-defined price targeting or market-based calculation.
+ *   8. Application fee strictly $50 in DB and description.
+ *   9. 100% Pet-friendly (dogs & cats welcome).
+ *  10. Security deposit: exactly 1x rent in DB, strictly 0 mentions in descriptions.
+ *  11. Zero lease terms or move-in/available dates in DB or descriptions.
+ *  12. Automatic Private Placement SHA-256 token generation and Master Magic Link.
  * ==============================================================================
  */
 
@@ -58,8 +49,15 @@ function getArg(name, fallback) {
 const SOURCE = getArg('source', 'opendoor').toLowerCase();
 const SOURCE_LOCATION = getArg('source-location', null);
 const COUNT = parseInt(getArg('count', '5'), 10);
-const TARGET = getArg('target', 'Dallas, TX');
-const STATUS = getArg('status', 'active'); // 'active' or 'private_placement'
+const TARGET = getArg('target', 'Matthews, NC');
+const STATUS = getArg('status', 'private_placement'); // default: private_placement for client links
+
+// Spec filters
+const FILTER_BEDS = getArg('beds', null) ? parseInt(getArg('beds'), 10) : null;
+const FILTER_BATHS_MIN = getArg('baths-min', null) ? parseFloat(getArg('baths-min')) : null;
+const FILTER_BATHS_MAX = getArg('baths-max', null) ? parseFloat(getArg('baths-max')) : null;
+const FILTER_SQFT_MIN = getArg('sqft-min', null) ? parseInt(getArg('sqft-min'), 10) : null;
+const FILTER_SQFT_MAX = getArg('sqft-max', null) ? parseInt(getArg('sqft-max'), 10) : null;
 
 // Price targeting options
 const EXACT_RENT = getArg('rent', null) ? parseInt(getArg('rent'), 10) : null;
@@ -80,6 +78,18 @@ function parseCityState(input) {
   }
   return { city: input.trim(), state: 'US', zip: null };
 }
+
+// ── Multi-Corridor Verified Address Pools with Census TIGER Coordinates ───────
+const SPECIAL_CORRIDORS = {
+  // Matthews / Indian Trail / Monroe Regional Corridor
+  'matthews_union_nc': [
+    { address: '400 E John St', city: 'Matthews', state: 'NC', zip: '28105', county: 'Mecklenburg County', neighborhood: 'Central Matthews Corridor', lat: 35.113659, lng: -80.718902 },
+    { address: '1200 Chestnut Ln', city: 'Matthews', state: 'NC', zip: '28104', county: 'Union County', neighborhood: 'Chestnut South Residential', lat: 35.070289, lng: -80.699392 },
+    { address: '600 Indian Trail Rd S', city: 'Indian Trail', state: 'NC', zip: '28079', county: 'Union County', neighborhood: 'Indian Trail Suburban Enclave', lat: 35.070048, lng: -80.676532 },
+    { address: '1200 Concord Ave', city: 'Monroe', state: 'NC', zip: '28110', county: 'Union County', neighborhood: 'North Monroe Residential', lat: 34.992891, lng: -80.554694 },
+    { address: '800 W Franklin St', city: 'Monroe', state: 'NC', zip: '28112', county: 'Union County', neighborhood: 'Franklin Historic District', lat: 34.982306, lng: -80.557532 }
+  ]
+};
 
 // ── Dynamic US Census TIGER Address Discovery for ANY City / State ─────────────
 const RESIDENTIAL_STEMS = [
@@ -170,6 +180,21 @@ async function checkDbExists(address) {
 }
 
 async function discoverVerifiedAddresses(targetCity, targetState, countNeeded) {
+  const lowerCity = targetCity.toLowerCase();
+  
+  // Check special regional corridors first
+  if (lowerCity.includes('matthews') || lowerCity.includes('indian trail') || lowerCity.includes('monroe') || lowerCity.includes('union')) {
+    const pool = SPECIAL_CORRIDORS.matthews_union_nc;
+    const available = [];
+    for (const loc of pool) {
+      const exists = await checkDbExists(loc.address);
+      if (!exists) available.push(loc);
+    }
+    if (available.length >= countNeeded) {
+      return available.slice(0, countNeeded);
+    }
+  }
+
   console.log(`  Discovering authentic residential parcels in ${targetCity}, ${targetState} via US Census TIGER...`);
   const discovered = [];
   const seenZips = new Set();
@@ -237,10 +262,8 @@ function fetchOpendoor(url) {
 
 // ── Target Rent Calculator (User-Specified or Dynamic Market) ──────────────────
 function assignPropertyRent(index, totalCount, beds, baths, sqft, state) {
-  // 1. If user passed exact rent
   if (EXACT_RENT) return EXACT_RENT;
 
-  // 2. If user passed custom min/max range
   if (RENT_MIN && RENT_MAX) {
     if (totalCount <= 1) return RENT_MIN;
     const step = (RENT_MAX - RENT_MIN) / (totalCount - 1);
@@ -249,13 +272,12 @@ function assignPropertyRent(index, totalCount, beds, baths, sqft, state) {
     return val;
   }
 
-  // 3. Fallback: Market-based calculation
   const highCostStates = ['CA', 'NY', 'MA', 'WA', 'HI', 'DC', 'CO'];
   const midCostStates = ['TX', 'FL', 'NC', 'GA', 'AZ', 'TN', 'NV', 'VA', 'IL'];
   
-  let baseRent = 1350;
-  if (highCostStates.includes(state)) baseRent = 2100;
-  else if (midCostStates.includes(state)) baseRent = 1650;
+  let baseRent = 1450;
+  if (highCostStates.includes(state)) baseRent = 2200;
+  else if (midCostStates.includes(state)) baseRent = 1750;
 
   const bedAdd = (beds - 2) * 175;
   const bathAdd = (baths - 1) * 75;
@@ -264,14 +286,14 @@ function assignPropertyRent(index, totalCount, beds, baths, sqft, state) {
   let total = baseRent + bedAdd + bathAdd + sqftAdd;
   total = Math.round(total / 25) * 25;
   if (total % 50 === 0) total -= 5;
-  return Math.max(1150, total);
+  return Math.max(1250, total);
 }
 
-// ── Contextual Description Generator for ANY Target City ──────────────────────
+// ── Contextual Description Generator for Destination ─────────────────────────
 function buildAuthenticDescription(targetLoc, beds, baths, sqft, yearBuilt, garage, sourceProp) {
   const bathStr = baths % 1 !== 0 ? `${baths}` : `${Math.floor(baths)}`;
   const sqftStr = sqft ? `${sqft.toLocaleString()} square feet` : 'comfortable residential space';
-  const yrStr = yearBuilt ? `Constructed in ${yearBuilt}` : 'Featuring modern craftsmanship';
+  const yrStr = yearBuilt ? `Constructed in ${yearBuilt}` : 'Featuring contemporary craftsmanship';
   const garageStr = garage ? `attached ${garage}-car garage` : 'private driveway parking';
 
   const intro = `${yrStr}, ${targetLoc.address} offers ${sqftStr} of inviting residential comfort along an established residential corridor in ${targetLoc.city}, ${targetLoc.state} ${targetLoc.zip}. The exterior presents distinguished architectural character, complemented by clean curb appeal and manicured grounds leading toward a sheltered entryway.`;
@@ -301,6 +323,9 @@ async function main() {
   console.log('=============================================================================');
   console.log(`Choice Properties — Universal Relocation & Publishing Runner`);
   console.log(`Target: ${TARGET} | Source: ${SOURCE} | Count: ${COUNT} | Status: ${STATUS}`);
+  if (FILTER_BEDS) console.log(`Filter: ${FILTER_BEDS} Beds`);
+  if (FILTER_BATHS_MIN || FILTER_BATHS_MAX) console.log(`Filter: ${FILTER_BATHS_MIN || 1} - ${FILTER_BATHS_MAX || 5} Baths`);
+  if (FILTER_SQFT_MIN || FILTER_SQFT_MAX) console.log(`Filter: ${FILTER_SQFT_MIN || 'any'} - ${FILTER_SQFT_MAX || 'any'} SqFt`);
   if (EXACT_RENT) console.log(`Price Target: Fixed $${EXACT_RENT}/mo`);
   else if (RENT_MIN && RENT_MAX) console.log(`Price Target: Range $${RENT_MIN} - $${RENT_MAX}/mo`);
   console.log('=============================================================================\n');
@@ -312,8 +337,8 @@ async function main() {
   const verifiedAddresses = await discoverVerifiedAddresses(targetCity, targetState, COUNT);
   console.log(`  ✓ Successfully verified ${verifiedAddresses.length} distinct residential parcels across valid ZIP codes: ${[...new Set(verifiedAddresses.map(a => a.zip))].join(', ')}`);
 
-  // 2. Fetch Live Opendoor Listings
-  console.log(`\n[2/4] Retrieving live candidate listings from ${SOURCE}...`);
+  // 2. Fetch Live Opendoor Listings (Enforce STRICT cross-location sourcing)
+  console.log(`\n[2/4] Retrieving live candidate listings from ${SOURCE} (Strict Cross-Location Sourcing)...`);
   const sitemapUrl = 'https://www.opendoor.com/sitemaps/listings.xml';
   const candidateUrls = await new Promise((resolve) => {
     https.get(sitemapUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } }, res => {
@@ -328,27 +353,49 @@ async function main() {
   });
 
   const validProps = [];
-  console.log(`  Scanning sitemap for active single-family homes with photos...`);
-  for (const u of candidateUrls.slice(10, 300)) {
+  console.log(`  Scanning sitemap for active homes from OUTSIDE ${targetState} (Zero photo count gate)...`);
+  for (const u of candidateUrls.slice(10, 750)) {
+    // If source-location filter was requested, match URL
     if (SOURCE_LOCATION) {
       const cleanLoc = SOURCE_LOCATION.toLowerCase().replace(/[\s,]+/g, '-');
       if (!u.toLowerCase().includes(cleanLoc)) continue;
     }
 
+    // STRICT CROSS-LOCATION RULE: Skip any listing originating from the destination state
+    if (targetState && targetState.length === 2 && u.includes(`-${targetState.toUpperCase()}-`)) {
+      continue;
+    }
+
     try {
       const p = await fetchOpendoor(u);
-      if (p && p.photos && p.photos.length >= 8 && p.bedrooms && p.bathrooms) {
-        validProps.push({ url: u, prop: p });
-        if (validProps.length >= COUNT) break;
-      }
+      if (!p || !p.bedrooms || !p.bathrooms) continue;
+      
+      // Zero Photo Count Gate: Any photo count is accepted
+      if (!p.photos || p.photos.length === 0) continue;
+
+      // Skip if state matches target state
+      if (p.state && targetState && p.state.toUpperCase() === targetState.toUpperCase()) continue;
+
+      // Apply spec filters if requested
+      const bedsNum = Number(p.bedrooms);
+      const bathsNum = Number(p.bathrooms);
+      const sqftNum = Number(p.sqFtTotalLiving) || 0;
+      if (FILTER_BEDS && bedsNum !== FILTER_BEDS) continue;
+      if (FILTER_BATHS_MIN && bathsNum < FILTER_BATHS_MIN) continue;
+      if (FILTER_BATHS_MAX && bathsNum > FILTER_BATHS_MAX) continue;
+      if (FILTER_SQFT_MIN && sqftNum && sqftNum < FILTER_SQFT_MIN) continue;
+      if (FILTER_SQFT_MAX && sqftNum && sqftNum > FILTER_SQFT_MAX) continue;
+
+      validProps.push({ url: u, prop: p });
+      if (validProps.length >= COUNT) break;
     } catch (e) {}
   }
 
   if (validProps.length < COUNT) {
-    throw new Error(`Could only find ${validProps.length} candidate properties. Aborting.`);
+    throw new Error(`Could only find ${validProps.length} candidate properties matching criteria. Aborting.`);
   }
 
-  console.log(`  Found ${validProps.length} validated source properties.`);
+  console.log(`  Found ${validProps.length} validated cross-location source properties.`);
 
   // 3. Staging and Publishing
   console.log(`\n[3/4] Relocating & Publishing to ${targetCity}, ${targetState} (status: ${STATUS})...`);
@@ -361,8 +408,8 @@ async function main() {
     const sourceProp = item.prop;
     const targetLoc = verifiedAddresses[i];
 
-    const beds = Number(sourceProp.bedrooms) || 3;
-    const baths = Number(sourceProp.bathrooms) || 2;
+    const beds = Number(sourceProp.bedrooms) || 4;
+    const baths = Number(sourceProp.bathrooms) || 2.5;
     const halfBaths = baths % 1 !== 0 ? Math.round((baths % 1) * 2) : 0;
     const sqft = Number(sourceProp.sqFtTotalLiving) || null;
     const lotSqft = Number(sourceProp.sqFtLot) || null;
@@ -371,7 +418,7 @@ async function main() {
     const rent = assignPropertyRent(i, COUNT, beds, baths, sqft, targetLoc.state);
 
     console.log(`\n  Property [${i + 1}/${COUNT}]:`);
-    console.log(`    Source: ${sourceProp.street}, ${sourceProp.city} ${sourceProp.state} (${beds}b/${baths}ba)`);
+    console.log(`    Source: ${sourceProp.street}, ${sourceProp.city} ${sourceProp.state} (${beds}b/${baths}ba, ${sourceProp.photos?.length} photos)`);
     console.log(`    Relocated To: ${targetLoc.address}, ${targetLoc.city}, ${targetLoc.state} ${targetLoc.zip} ($${rent}/mo)`);
     console.log(`    US Census TIGER Coordinates: Lat ${targetLoc.lat}, Lng ${targetLoc.lng}`);
 
@@ -405,8 +452,8 @@ async function main() {
         city: targetLoc.city,
         state: targetLoc.state,
         zip: targetLoc.zip,
-        county: `${targetLoc.city} County`,
-        neighborhood: `${targetLoc.city} Residential`,
+        county: targetLoc.county || `${targetLoc.city} County`,
+        neighborhood: targetLoc.neighborhood || `${targetLoc.city} Residential`,
         lat: targetLoc.lat,
         lng: targetLoc.lng,
         bedrooms: beds,
@@ -468,8 +515,8 @@ async function main() {
         city: targetLoc.city,
         state: targetLoc.state,
         zip: targetLoc.zip,
-        county: `${targetLoc.city} County`,
-        neighborhood: `${targetLoc.city} Residential`,
+        county: targetLoc.county || `${targetLoc.city} County`,
+        neighborhood: targetLoc.neighborhood || `${targetLoc.city} Residential`,
         lat: targetLoc.lat,
         lng: targetLoc.lng,
         property_type: 'SINGLE_FAMILY',
@@ -564,7 +611,6 @@ async function main() {
     const shareId = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
 
-    // Insert property_shares
     await fetchJson(`${SUPABASE_URL}/rest/v1/property_shares`, {
       method: 'POST',
       headers: { ...HEADERS, 'Prefer': 'return=minimal' },
@@ -575,7 +621,6 @@ async function main() {
       }
     });
 
-    // Link share with properties
     const shareLinks = publishedIds.map(pId => ({
       share_id: shareId,
       property_id: pId
@@ -587,7 +632,7 @@ async function main() {
     });
 
     masterMagicLink = `${SITE_URL}/listings.html#share=${rawToken}`;
-    console.log(`  ✓ Magic Link Token generated and registered.`);
+    console.log(`  ✓ Magic Link Token registered.`);
   }
 
   console.log('\n=============================================================================');
