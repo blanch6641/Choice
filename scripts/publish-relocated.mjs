@@ -66,9 +66,9 @@ const FILTER_SQFT_MIN = getArg('sqft-min', null) ? parseInt(getArg('sqft-min'), 
 const FILTER_SQFT_MAX = getArg('sqft-max', null) ? parseInt(getArg('sqft-max'), 10) : null;
 
 // Price targeting options
-const EXACT_RENT = getArg('rent', null) ? parseInt(getArg('rent'), 10) : null;
-const RENT_MIN = getArg('rent-min', null) ? parseInt(getArg('rent-min'), 10) : null;
-const RENT_MAX = getArg('rent-max', null) ? parseInt(getArg('rent-max'), 10) : null;
+const EXACT_RENT = (getArg('rent', null) || getArg('price', null)) ? parseInt(getArg('rent', null) || getArg('price', null), 10) : null;
+const RENT_MIN = (getArg('rent-min', null) || getArg('price-min', null)) ? parseInt(getArg('rent-min', null) || getArg('price-min', null), 10) : null;
+const RENT_MAX = (getArg('rent-max', null) || getArg('price-max', null)) ? parseInt(getArg('rent-max', null) || getArg('price-max', null), 10) : null;
 
 // ── Professional Title Formatter ───────────────────────────────────────────────
 function formatProfessionalTitle(propertyType, city, state, sqft, yearBuilt) {
@@ -110,8 +110,31 @@ const SPECIAL_CORRIDORS = {
   ]
 };
 
+function toTitleCase(str) {
+  if (!str) return '';
+  return str.toLowerCase().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+    .replace(/\bSt\b/gi, 'St')
+    .replace(/\bDr\b/gi, 'Dr')
+    .replace(/\bRd\b/gi, 'Rd')
+    .replace(/\bAve\b/gi, 'Ave')
+    .replace(/\bBlvd\b/gi, 'Blvd')
+    .replace(/\bLn\b/gi, 'Ln')
+    .replace(/\bCt\b/gi, 'Ct')
+    .replace(/\bPl\b/gi, 'Pl')
+    .replace(/\bWay\b/gi, 'Way')
+    .replace(/\bCir\b/gi, 'Cir')
+    .replace(/\bPkwy\b/gi, 'Pkwy')
+    .replace(/\bN\b/gi, 'N')
+    .replace(/\bS\b/gi, 'S')
+    .replace(/\bE\b/gi, 'E')
+    .replace(/\bW\b/gi, 'W');
+}
+
 // ── Dynamic US Census TIGER Address Discovery for ANY City / State ─────────────
 const RESIDENTIAL_STEMS = [
+  '200 Gilead Rd', '300 Mount Holly-Huntersville Rd', '400 N Church St', '600 Dallas St',
+  '100 Holbrook St', '400 Queens Rd', '700 Providence Rd', '1200 Sharon Rd',
+  '800 Selwyn Ave', '500 East Blvd', '900 Park Rd', '1100 Colony Rd',
   '600 Oak St', '1200 Maple Ave', '800 Elm St', '400 Cedar Ave', 
   '1500 Pine St', '700 Willow Dr', '1100 Highland Rd', '900 Meadow Ln', 
   '1400 Forest St', '500 Ridge Rd', '1000 Magnolia Dr', '850 Cypress Way',
@@ -138,8 +161,8 @@ async function queryCensus(street, city, state) {
             const formattedAddr = `${comp.fromAddress || street.split(' ')[0]} ${streetName}`.trim();
             resolve({
               valid: true,
-              address: formattedAddr,
-              city: comp.city || city,
+              address: toTitleCase(formattedAddr),
+              city: toTitleCase(comp.city || city),
               state: comp.state || state,
               zip: comp.zip || '',
               lat: parseFloat(match.coordinates.y.toFixed(6)),
@@ -397,17 +420,31 @@ async function main() {
     }).on('error', () => resolve([]));
   });
 
+  const isCharlotteMarket = TARGETS.some(t => t.toLowerCase().includes('charlotte')) || (SOURCE_LOCATION && SOURCE_LOCATION.toLowerCase().includes('charlotte'));
+  
+  // If Charlotte market is targeted, prioritize Charlotte listings from Opendoor
+  const candidateUrlsToScan = [...candidateUrls];
+  if (isCharlotteMarket) {
+    candidateUrlsToScan.sort((a, b) => {
+      const aChar = a.toLowerCase().includes('charlotte-nc');
+      const bChar = b.toLowerCase().includes('charlotte-nc');
+      return (bChar ? 1 : 0) - (aChar ? 1 : 0);
+    });
+  }
+
   const validProps = [];
-  console.log(`  Scanning sitemap for active homes from OUTSIDE ${targetState} (Zero photo count gate)...`);
-  for (const u of candidateUrls.slice(10, 750)) {
+  console.log(`  Scanning sitemap for active homes (beds: ${FILTER_BEDS || 'any'}, Zero photo count gate)...`);
+  for (const u of candidateUrlsToScan.slice(0, 1000)) {
     // If source-location filter was requested, match URL
     if (SOURCE_LOCATION) {
       const cleanLoc = SOURCE_LOCATION.toLowerCase().replace(/[\s,]+/g, '-');
       if (!u.toLowerCase().includes(cleanLoc)) continue;
     }
 
-    // STRICT CROSS-LOCATION RULE: Skip any listing originating from the destination state
-    if (targetState && targetState.length === 2 && u.includes(`-${targetState.toUpperCase()}-`)) {
+    const isLocalCandidate = isCharlotteMarket && u.toLowerCase().includes('charlotte-nc');
+
+    // Skip destination state if not an intended in-market candidate
+    if (!isLocalCandidate && targetState && targetState.length === 2 && u.includes(`-${targetState.toUpperCase()}-`)) {
       continue;
     }
 
@@ -418,8 +455,8 @@ async function main() {
       // Zero Photo Count Gate: Any photo count is accepted
       if (!p.photos || p.photos.length === 0) continue;
 
-      // Skip if state matches target state
-      if (p.state && targetState && p.state.toUpperCase() === targetState.toUpperCase()) continue;
+      // Skip if state matches target state unless local candidate
+      if (!isLocalCandidate && p.state && targetState && p.state.toUpperCase() === targetState.toUpperCase()) continue;
 
       // Apply spec filters if requested
       const bedsNum = Number(p.bedrooms);
@@ -537,13 +574,17 @@ async function main() {
         smoking_allowed: false,
         lease_terms: null,
         minimum_lease_months: null,
-        available_date: today,
+        available_date: null,
         listed_at: today,
         description: description,
         original_description: sourceProp.description || null,
         original_image_urls: JSON.stringify(cleanPhotos)
       }
     });
+
+    // Determine architectural property type
+    const pTypeRaw = (sourceProp.propertyType || sourceProp.propertySubtype || 'SINGLE_FAMILY').toUpperCase();
+    const cleanPropType = pTypeRaw.includes('TOWN') ? 'TOWNHOUSE' : (pTypeRaw.includes('CONDO') ? 'APARTMENT' : 'SINGLE_FAMILY');
 
     // Publish to public.properties
     const choiceId = crypto.randomUUID();
@@ -554,7 +595,7 @@ async function main() {
         id: choiceId,
         landlord_id: null,
         status: STATUS,
-        title: formatProfessionalTitle('SINGLE_FAMILY', targetLoc.city, targetLoc.state, sqft, yearBuilt),
+        title: formatProfessionalTitle(cleanPropType, targetLoc.city, targetLoc.state, sqft, yearBuilt),
         description: description,
         address: targetLoc.address,
         city: targetLoc.city,
@@ -564,7 +605,7 @@ async function main() {
         neighborhood: targetLoc.neighborhood || `${targetLoc.city} Residential`,
         lat: targetLoc.lat,
         lng: targetLoc.lng,
-        property_type: 'SINGLE_FAMILY',
+        property_type: cleanPropType,
         bedrooms: beds,
         bathrooms: baths,
         half_bathrooms: halfBaths,
@@ -602,7 +643,7 @@ async function main() {
         has_central_air: true,
         has_basement: false,
         listed_at: today,
-        available_date: today,
+        available_date: null,
         featured: false
       }
     });
@@ -686,7 +727,9 @@ async function main() {
 
   if (masterMagicLink) {
     console.log(`🔗 MASTER CLIENT MAGIC LINK (Single link to view all ${publishedResults.length} properties together):`);
-    console.log(`👉 ${masterMagicLink}\n`);
+    console.log(`👉 ${masterMagicLink}`);
+    console.log(`🔗 MULTI-PROPERTY DIRECT URL:`);
+    console.log(`👉 ${SITE_URL}/listings.html?p=${publishedIds.join(',')}\n`);
   }
 
   console.log('INDIVIDUAL PROPERTY LISTINGS:');
