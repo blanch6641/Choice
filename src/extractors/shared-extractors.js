@@ -279,7 +279,7 @@
     const t = (homeType || '').toUpperCase().replace(/[^A-Z_]/g, '_');
     return TYPE_MAP[t] || t || 'SINGLE_FAMILY';
   }
-  function buildTitle(beds, propType, city, street, rawTitle, state, zip, baths) {
+  function buildTitle(beds, propType, city, street, rawTitle, state, zip, baths, sqft, yearBuilt) {
     const typeNames = {
       'SINGLE_FAMILY': 'Single-Family Home',
       'TOWNHOUSE': 'Townhome',
@@ -287,10 +287,18 @@
       'APARTMENT': 'Apartment Unit'
     };
     const tName = typeNames[(propType || '').toUpperCase()] || 'Residence';
-    const bedStr = beds ? `${beds}-Bed` : 'Home';
-    const bathStr = baths ? ` / ${baths}-Bath` : '';
-    const locStr = city && state ? ` in ${city}, ${state}` : (city ? ` in ${city}` : (state ? ` in ${state}` : ''));
-    return `${bedStr}${bathStr} ${tName}${locStr}`;
+    let style = 'Modern Suburban';
+    if (yearBuilt && yearBuilt < 1985) {
+      style = 'Classic Family';
+    } else if (sqft && sqft > 2400) {
+      style = 'Executive';
+    } else if (propType === 'TOWNHOUSE') {
+      style = 'Contemporary';
+    } else if (propType === 'APARTMENT') {
+      style = 'Urban';
+    }
+    const locStr = city && state ? ` | ${city}, ${state}` : (city ? ` | ${city}` : (state ? ` | ${state}` : ''));
+    return `${style} ${tName}${locStr}`;
   }
 
   function cleanForSaleText(text) {

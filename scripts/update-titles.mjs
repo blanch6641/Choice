@@ -9,7 +9,7 @@ const HEADERS = {
   'Content-Type': 'application/json'
 };
 
-function formatProfessionalTitle(beds, baths, propertyType, city, state) {
+function formatProfessionalTitle(propertyType, city, state, sqft, yearBuilt) {
   const typeNames = {
     'SINGLE_FAMILY': 'Single-Family Home',
     'TOWNHOUSE': 'Townhome',
@@ -17,10 +17,18 @@ function formatProfessionalTitle(beds, baths, propertyType, city, state) {
     'APARTMENT': 'Apartment Unit'
   };
   const tName = typeNames[(propertyType || '').toUpperCase()] || 'Residence';
-  const bedStr = beds ? `${beds}-Bed` : 'Home';
-  const bathStr = baths ? ` / ${baths}-Bath` : '';
-  const locStr = city && state ? ` in ${city}, ${state}` : (city ? ` in ${city}` : '');
-  return `${bedStr}${bathStr} ${tName}${locStr}`;
+  let style = 'Modern Suburban';
+  if (yearBuilt && yearBuilt < 1985) {
+    style = 'Classic Family';
+  } else if (sqft && sqft > 2400) {
+    style = 'Executive';
+  } else if (propertyType === 'TOWNHOUSE') {
+    style = 'Contemporary';
+  } else if (propertyType === 'APARTMENT') {
+    style = 'Urban';
+  }
+  const locStr = city && state ? ` | ${city}, ${state}` : (city ? ` | ${city}` : '');
+  return `${style} ${tName}${locStr}`;
 }
 
 async function fetchJson(url, options = {}) {
@@ -49,10 +57,10 @@ async function fetchJson(url, options = {}) {
 
 async function run() {
   console.log('Fetching properties...');
-  const props = await fetchJson(`${SUPABASE_URL}/rest/v1/properties?select=id,bedrooms,bathrooms,property_type,city,state`, { headers: HEADERS });
+  const props = await fetchJson(`${SUPABASE_URL}/rest/v1/properties?select=id,property_type,city,state,square_footage,year_built`, { headers: HEADERS });
   if (Array.isArray(props)) {
     for (const p of props) {
-      const newTitle = formatProfessionalTitle(p.bedrooms, p.bathrooms, p.property_type, p.city, p.state);
+      const newTitle = formatProfessionalTitle(p.property_type, p.city, p.state, p.square_footage, p.year_built);
       await fetchJson(`${SUPABASE_URL}/rest/v1/properties?id=eq.${p.id}`, {
         method: 'PATCH',
         headers: { ...HEADERS, 'Prefer': 'return=minimal' },
@@ -63,10 +71,10 @@ async function run() {
   }
 
   console.log('Fetching pipeline properties...');
-  const pipelineProps = await fetchJson(`${SUPABASE_URL}/rest/v1/pipeline_properties?select=id,bedrooms,bathrooms,property_type,city,state`, { headers: { ...HEADERS, 'Content-Profile': 'pipeline' } });
+  const pipelineProps = await fetchJson(`${SUPABASE_URL}/rest/v1/pipeline_properties?select=id,property_type,city,state,square_footage,year_built`, { headers: { ...HEADERS, 'Content-Profile': 'pipeline' } });
   if (Array.isArray(pipelineProps)) {
     for (const p of pipelineProps) {
-      const newTitle = formatProfessionalTitle(p.bedrooms, p.bathrooms, p.property_type, p.city, p.state);
+      const newTitle = formatProfessionalTitle(p.property_type, p.city, p.state, p.square_footage, p.year_built);
       await fetchJson(`${SUPABASE_URL}/rest/v1/pipeline_properties?id=eq.${p.id}`, {
         method: 'PATCH',
         headers: { ...HEADERS, 'Content-Profile': 'pipeline', 'Prefer': 'return=minimal' },
@@ -75,7 +83,7 @@ async function run() {
       console.log(`Updated pipeline property ${p.id} -> ${newTitle}`);
     }
   }
-  console.log('Done updating all property titles!');
+  console.log('Done updating all property titles to Option 2 format!');
 }
 
 run().catch(console.error);

@@ -65,7 +65,7 @@ const RENT_MIN = getArg('rent-min', null) ? parseInt(getArg('rent-min'), 10) : n
 const RENT_MAX = getArg('rent-max', null) ? parseInt(getArg('rent-max'), 10) : null;
 
 // ── Professional Title Formatter ───────────────────────────────────────────────
-function formatProfessionalTitle(beds, baths, propertyType, city, state) {
+function formatProfessionalTitle(propertyType, city, state, sqft, yearBuilt) {
   const typeNames = {
     'SINGLE_FAMILY': 'Single-Family Home',
     'TOWNHOUSE': 'Townhome',
@@ -73,10 +73,18 @@ function formatProfessionalTitle(beds, baths, propertyType, city, state) {
     'APARTMENT': 'Apartment Unit'
   };
   const tName = typeNames[(propertyType || '').toUpperCase()] || 'Residence';
-  const bedStr = beds ? `${beds}-Bed` : 'Home';
-  const bathStr = baths ? ` / ${baths}-Bath` : '';
-  const locStr = city && state ? ` in ${city}, ${state}` : (city ? ` in ${city}` : '');
-  return `${bedStr}${bathStr} ${tName}${locStr}`;
+  let style = 'Modern Suburban';
+  if (yearBuilt && yearBuilt < 1985) {
+    style = 'Classic Family';
+  } else if (sqft && sqft > 2400) {
+    style = 'Executive';
+  } else if (propertyType === 'TOWNHOUSE') {
+    style = 'Contemporary';
+  } else if (propertyType === 'APARTMENT') {
+    style = 'Urban';
+  }
+  const locStr = city && state ? ` | ${city}, ${state}` : (city ? ` | ${city}` : '');
+  return `${style} ${tName}${locStr}`;
 }
 
 // ── Parse City and State from Target String ────────────────────────────────────
@@ -462,7 +470,7 @@ async function main() {
         source_url: item.url,
         source_listing_id: sourceProp.addressToken || pipelineId,
         status: 'scraped',
-        title: formatProfessionalTitle(beds, baths, 'SINGLE_FAMILY', targetLoc.city, targetLoc.state),
+        title: formatProfessionalTitle('SINGLE_FAMILY', targetLoc.city, targetLoc.state, sqft, yearBuilt),
         address: targetLoc.address,
         city: targetLoc.city,
         state: targetLoc.state,
@@ -524,7 +532,7 @@ async function main() {
         id: choiceId,
         landlord_id: null,
         status: STATUS,
-        title: formatProfessionalTitle(beds, baths, 'SINGLE_FAMILY', targetLoc.city, targetLoc.state),
+        title: formatProfessionalTitle('SINGLE_FAMILY', targetLoc.city, targetLoc.state, sqft, yearBuilt),
         description: description,
         address: targetLoc.address,
         city: targetLoc.city,
