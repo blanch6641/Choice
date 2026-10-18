@@ -1316,6 +1316,7 @@ function renderGallery(photos) {
   }
   mainImg.sizes  = '(max-width: 768px) 100vw, (max-width: 1280px) 65vw, 55vw';
   mainImg.alt    = 'Property photo 1';
+  mainImg.setAttribute('referrerpolicy', 'no-referrer');
   mainImg.onerror = function() { this.onerror = null; this.srcset = ''; this.src = '/assets/placeholder-property.jpg'; };
 
   // LQIP blur-up for hero image — tiny blurred placeholder fades out once full image loads
@@ -1680,6 +1681,7 @@ function lightboxShow(idx) {
     img.srcset = isIk ? `${CONFIG.img(allPhotos[idx], 'gallery')} 1200w, ${CONFIG.img(allPhotos[idx], 'gallery_2x')} 2400w, ${CONFIG.img(allPhotos[idx], 'lightbox')} 4000w` : '';
     img.sizes  = '100vw';
     img.alt    = `Property photo ${idx + 1}`;
+    img.setAttribute('referrerpolicy', 'no-referrer');
 
     const reveal = () => {
       img.classList.remove('loading');
