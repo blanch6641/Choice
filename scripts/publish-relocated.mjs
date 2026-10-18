@@ -64,6 +64,21 @@ const EXACT_RENT = getArg('rent', null) ? parseInt(getArg('rent'), 10) : null;
 const RENT_MIN = getArg('rent-min', null) ? parseInt(getArg('rent-min'), 10) : null;
 const RENT_MAX = getArg('rent-max', null) ? parseInt(getArg('rent-max'), 10) : null;
 
+// ── Professional Title Formatter ───────────────────────────────────────────────
+function formatProfessionalTitle(beds, baths, propertyType, city, state) {
+  const typeNames = {
+    'SINGLE_FAMILY': 'Single-Family Home',
+    'TOWNHOUSE': 'Townhome',
+    'DUPLEX': 'Duplex',
+    'APARTMENT': 'Apartment Unit'
+  };
+  const tName = typeNames[(propertyType || '').toUpperCase()] || 'Residence';
+  const bedStr = beds ? `${beds}-Bed` : 'Home';
+  const bathStr = baths ? ` / ${baths}-Bath` : '';
+  const locStr = city && state ? ` in ${city}, ${state}` : (city ? ` in ${city}` : '');
+  return `${bedStr}${bathStr} ${tName}${locStr}`;
+}
+
 // ── Parse City and State from Target String ────────────────────────────────────
 function parseCityState(input) {
   const parts = input.split(',').map(s => s.trim());
@@ -447,7 +462,7 @@ async function main() {
         source_url: item.url,
         source_listing_id: sourceProp.addressToken || pipelineId,
         status: 'scraped',
-        title: `${targetLoc.address}, ${targetLoc.city}, ${targetLoc.state} ${targetLoc.zip}`,
+        title: formatProfessionalTitle(beds, baths, 'SINGLE_FAMILY', targetLoc.city, targetLoc.state),
         address: targetLoc.address,
         city: targetLoc.city,
         state: targetLoc.state,
@@ -509,7 +524,7 @@ async function main() {
         id: choiceId,
         landlord_id: null,
         status: STATUS,
-        title: `${targetLoc.address}, ${targetLoc.city}, ${targetLoc.state} ${targetLoc.zip}`,
+        title: formatProfessionalTitle(beds, baths, 'SINGLE_FAMILY', targetLoc.city, targetLoc.state),
         description: description,
         address: targetLoc.address,
         city: targetLoc.city,

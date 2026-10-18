@@ -285,23 +285,18 @@
     const t = (homeType || '').toUpperCase().replace(/[^A-Z_]/g, '_');
     return TYPE_MAP[t] || t || 'SINGLE_FAMILY';
   }
-  function buildTitle(beds, propType, city, street, rawTitle, state, zip) {
-    if (rawTitle && typeof rawTitle === 'string' && rawTitle.trim().length > 3) {
-      const clean = rawTitle.trim();
-      if (!/^\d+BR\s+(?:SINGLE|APARTMENT|HOUSE|TOWNHOME|CONDO|DUPLEX|Rental)/i.test(clean)) {
-        return clean;
-      }
-    }
-    if (street && typeof street === 'string' && street.trim()) {
-      const s = street.trim();
-      if (city && state) {
-        return `${s}, ${city}, ${state}${zip ? ' ' + zip : ''}`;
-      } else if (city) {
-        return `${s}, ${city}`;
-      }
-      return s;
-    }
-    return city ? ((beds ? beds + 'BR ' : '') + fmtType(propType) + ' in ' + city) : 'Rental Listing';
+  function buildTitle(beds, propType, city, street, rawTitle, state, zip, baths) {
+    const typeNames = {
+      'SINGLE_FAMILY': 'Single-Family Home',
+      'TOWNHOUSE': 'Townhome',
+      'DUPLEX': 'Duplex',
+      'APARTMENT': 'Apartment Unit'
+    };
+    const tName = typeNames[(propType || '').toUpperCase()] || 'Residence';
+    const bedStr = beds ? `${beds}-Bed` : 'Home';
+    const bathStr = baths ? ` / ${baths}-Bath` : '';
+    const locStr = city && state ? ` in ${city}, ${state}` : (city ? ` in ${city}` : (state ? ` in ${state}` : ''));
+    return `${bedStr}${bathStr} ${tName}${locStr}`;
   }
 
   function cleanForSaleText(text) {
