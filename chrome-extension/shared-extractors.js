@@ -293,18 +293,8 @@
       'APARTMENT': 'Apartment Unit'
     };
     const tName = typeNames[(propType || '').toUpperCase()] || 'Residence';
-    let style = 'Modern Suburban';
-    if (yearBuilt && yearBuilt < 1985) {
-      style = 'Classic Family';
-    } else if (sqft && sqft > 2400) {
-      style = 'Executive';
-    } else if (propType === 'TOWNHOUSE') {
-      style = 'Contemporary';
-    } else if (propType === 'APARTMENT') {
-      style = 'Urban';
-    }
-    const locStr = city && state ? ` | ${city}, ${state}` : (city ? ` | ${city}` : (state ? ` | ${state}` : ''));
-    return `${style} ${tName}${locStr}`;
+    const cityName = city || 'Property';
+    return `${cityName} ${tName}`;
   }
 
   function cleanForSaleText(text) {

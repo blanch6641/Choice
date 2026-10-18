@@ -73,18 +73,8 @@ function formatProfessionalTitle(propertyType, city, state, sqft, yearBuilt) {
     'APARTMENT': 'Apartment Unit'
   };
   const tName = typeNames[(propertyType || '').toUpperCase()] || 'Residence';
-  let style = 'Modern Suburban';
-  if (yearBuilt && yearBuilt < 1985) {
-    style = 'Classic Family';
-  } else if (sqft && sqft > 2400) {
-    style = 'Executive';
-  } else if (propertyType === 'TOWNHOUSE') {
-    style = 'Contemporary';
-  } else if (propertyType === 'APARTMENT') {
-    style = 'Urban';
-  }
-  const locStr = city && state ? ` | ${city}, ${state}` : (city ? ` | ${city}` : '');
-  return `${style} ${tName}${locStr}`;
+  const cityName = city || 'Property';
+  return `${cityName} ${tName}`;
 }
 
 // ── Parse City and State from Target String ────────────────────────────────────
