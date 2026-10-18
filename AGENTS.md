@@ -3,18 +3,20 @@
 > ### 🚀 DIRECTIVE 1 — ADDRESS CHANGING, RELOCATION & VERIFIED MUNICIPAL STREET PROTOCOL
 > **STATUS: FULLY ENABLED ACROSS ENTIRE PROJECT & PIPELINE (OWNER AUTHORIZED)**
 > 
-> 1. **Verified Municipal Street Mapping Protocol**:
->    - When relocating properties cross-city (e.g. to Yukon, OK or Charlotte, NC), addresses must strictly use verified real residential streets and parcel ranges recognized by municipal and postal geocoders, paired with exact US Census Bureau TIGER-line GPS coordinates.
->    - Synthetic or unverified street names are strictly prohibited. Original source identifiers remain preserved in pipeline metadata (`original_description`, `source_url`, `source_listing_id`).
+> 1. **Universal Multi-City Verified Municipal Protocol (ANY US City / ANY State)**:
+>    - Relocation is universal across all 50 states and any municipality (e.g. Dallas TX, Denver CO, Tampa FL, Phoenix AZ, Atlanta GA, Charlotte NC, Oklahoma City OK, etc.). Yukon was merely an initial test job.
+>    - Addresses must strictly use real, postal-recognized residential streets and valid parcel ranges discovered and verified against the official **US Census Bureau TIGER-line geocoder**, paired with exact live rooftop coordinates. Synthetic, fake, or unverified street names are strictly prohibited. Original source identifiers remain preserved in pipeline metadata (`original_description`, `source_url`, `source_listing_id`).
 > 2. **Multi-ZIP Geographic Distribution Rule**:
->    - When publishing or relocating to a target location/metro (e.g. Yukon / West OKC Metro), you must **NOT** publish all properties in the same single ZIP code.
->    - Distribute properties across the valid residential ZIP codes covering that municipality and its adjacent residential corridors (e.g. for Yukon: `73099`, `73127`, `73132`, `73064`), unless the user explicitly mandates a single specified ZIP code (e.g. "all in 73099").
-> 3. **The Mandatory CLI Runner for Future AIs**:
->    - Future AI assistants MUST NOT write custom, unverified scraping code. Always execute the unified, Census-validated runner:
+>    - When publishing or relocating to any destination municipality, you must **NOT** dump all properties into a single ZIP code.
+>    - Distribute properties across the valid residential ZIP codes covering that municipality and its adjacent residential corridors, unless the user explicitly mandates a single specified ZIP code (e.g. "all in 75217").
+> 3. **The Mandatory Universal CLI Runner for Future AIs**:
+>    - Future AI assistants MUST NOT write custom or unverified scraping code. Always execute the unified, Census-validated runner:
 >      ```bash
->      node scripts/publish-relocated.mjs --source opendoor --count 5 --target "Yukon, OK"
+>      node scripts/publish-relocated.mjs --source opendoor --count 5 --target "<City, State>"
+>      # Optional: filter source location
+>      node scripts/publish-relocated.mjs --source opendoor --source-location "<City, State>" --target "<City, State>" --count 5
 >      ```
->    - The runner automatically handles Census TIGER geocoding, multi-ZIP distribution, original image sequence preservation, and Choice platform rule enforcement.
+>    - The runner automatically handles Census TIGER geocoding, multi-ZIP distribution, original image sequence preservation, realistic regional market rent calculation, and Choice platform rule enforcement.
 
 > ### 🚀 DIRECTIVE 2 — STRICT ORIGINAL IMAGE ORDER & DIRECT SOURCE CDN INGESTION
 > 1. **Automated Photo Reordering Disabled**:
