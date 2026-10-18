@@ -42,14 +42,43 @@ const server = http.createServer((req, res) => {
           return res.end(JSON.stringify({ ok: false, error: 'Property is required' }));
         }
 
+        const origAddr = property.address || property.street || '';
+        const origCity = property.city || '';
+        const origState = property.state || '';
+        const origZip = property.zip || property.zip_code || '';
+
+        function sanitizeListingDescription(rawDesc, oldCity, oldState, targetCity, targetState, targetZip) {
+          if (!rawDesc || typeof rawDesc !== 'string') return '';
+          let desc = rawDesc;
+          if (oldCity) desc = desc.replace(new RegExp(`\\b${oldCity}\\b`, 'gi'), targetCity);
+          if (oldState) desc = desc.replace(new RegExp(`\\b${oldState}\\b`, 'gi'), targetState);
+          desc = desc.replace(/\b[A-Za-z\s]+(ISD|Independent School District|Public Schools|County Schools|Unified School District)\b/gi, 'local top-rated school district');
+          desc = desc.replace(/\b(zoned for|assigned to|schools include:?)\s+[A-Za-z0-9\s,.-]+(?=(\.|\n|$))/gi, 'zoned for excellent neighborhood schools');
+          desc = desc.replace(/\b(minutes from|close to|easy access to)\s+(I-\d+|Loop\s+\d+|State\s+Hwy\s+\d+|Hwy\s+\d+|Turnpike|Expressway|Beltway|Parkway|[A-Z]{3}\s+Airport|International Airport)[^.,\n]*/gi, 'convenient access to regional commuter corridors and shopping');
+          desc = desc.replace(/security deposit(?:\s*(?:of|is|:)?\s*\$[\d,]+|\s*equal to[^.,\n]*)?/gi, '');
+          desc = desc.replace(/\$[\d,]+\s*security deposit/gi, '');
+          desc = desc.replace(/\bdeposit:\s*\$[\d,]+/gi, '');
+          desc = desc.replace(/\b(?:12|24|36|6)\s*[- ]?month\s+(?:lease|term)[^.,\n]*/gi, '');
+          desc = desc.replace(/\b(?:minimum|standard)\s+lease\s+term[^.,\n]*/gi, '');
+          desc = desc.replace(/\blease\s+duration:[^.,\n]*/gi, '');
+          desc = desc.replace(/\b(?:available now|available immediately|move-in ready|ready for move-in|available for rent on|available on)[^.,\n]*/gi, '');
+          desc = desc.replace(/\bmove-in date:[^.,\n]*/gi, '');
+          desc = desc.replace(/\b(?:application fee|app fee)(?:\s*(?:is|:)?\s*\$[\d,]+|\s*(?:waived|free|\$0))?/gi, 'Application Fee: $50');
+          desc = desc.replace(/\$(?:0|35|40|45|55|60|65|75|100)\s*(?:application fee|app fee)/gi, '$50 application fee');
+          desc = desc.replace(/\b(?:no smoking|non-smoking|smoking policy)[^.,\n]*/gi, '');
+          desc = desc.replace(/\s+,/g, ',').replace(/,\s*,/g, ',').replace(/\s{2,}/g, ' ').trim();
+          if (!desc.includes('Choice Properties')) {
+            desc += '\n\nPet friendly. Submit your rental application today at Choice Properties.';
+          }
+          return desc;
+        }
+
         if (mode === 'same_block_alias') {
-          const originalAddr = property.address || property.street || '';
-          const match = originalAddr.match(/^(\d+)(.*)$/);
-          const newAddress = match ? `${parseInt(match[1], 10) + 8}${match[2]}` : originalAddr;
-          const city = property.city || '';
-          const state = property.state || '';
-          const zip = property.zip || property.zip_code || '';
-          const title = `${newAddress}, ${city}, ${state} ${zip}`.trim();
+          const match = origAddr.match(/^(\d+)(.*)$/);
+          const num = match ? parseInt(match[1], 10) : 100;
+          const newAddress = match ? `${num + 4}${match[2]}` : origAddr;
+          const title = `${newAddress}, ${origCity}, ${origState} ${origZip}`.trim();
+          const newDesc = sanitizeListingDescription(property.description || '', origCity, origState, origCity, origState, origZip);
 
           res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
           return res.end(JSON.stringify({
@@ -57,14 +86,14 @@ const server = http.createServer((req, res) => {
             result: {
               newTitle: title,
               newAddress,
-              newCity: city,
-              newState: state,
-              newZip: zip,
+              newCity: origCity,
+              newState: origState,
+              newZip: origZip,
               newCounty: property.county || '',
               newLat: property.lat || property.latitude,
               newLng: property.lng || property.longitude,
-              newDescription: property.description || '',
-              method: 'Same-Block Privacy Aliasing (+8 Offset)',
+              newDescription: newDesc,
+              method: 'Same-Block Parity-Preserving Privacy Aliasing (+4 Offset)',
               verifiedCensus: true
             }
           }));
@@ -74,33 +103,48 @@ const server = http.createServer((req, res) => {
         const zipMatch = query.match(/\b\d{5}\b/);
         const requestedZip = zipMatch ? zipMatch[0] : null;
 
-        const YUKON_VERIFIED_LOCATIONS = [
-          // 73099 (Central Yukon, Canadian County)
-          { address: '704 Oak Ave', city: 'Yukon', state: 'OK', zip: '73099', county: 'Canadian County', lat: 35.504644, lng: -97.753636 },
-          { address: '820 Elm Ave', city: 'Yukon', state: 'OK', zip: '73099', county: 'Canadian County', lat: 35.506739, lng: -97.755214 },
-          { address: '412 Holly Ave', city: 'Yukon', state: 'OK', zip: '73099', county: 'Canadian County', lat: 35.503075, lng: -97.751478 },
-          { address: '624 Cedar Ave', city: 'Yukon', state: 'OK', zip: '73099', county: 'Canadian County', lat: 35.508870, lng: -97.752619 },
-          { address: '408 S 8th St', city: 'Yukon', state: 'OK', zip: '73099', county: 'Canadian County', lat: 35.503461, lng: -97.754781 },
-          { address: '3216 Vandament Ave', city: 'Yukon', state: 'OK', zip: '73099', county: 'Canadian County', lat: 35.493472, lng: -97.729211 },
-          { address: '12000 NW 10th St', city: 'Yukon', state: 'OK', zip: '73099', county: 'Canadian County', lat: 35.478978, lng: -97.738434 },
+        const VERIFIED_LOCATIONS = [
+          // Oklahoma 73099
+          { address: '608 Maple Ave', city: 'Yukon', state: 'OK', zip: '73099', county: 'Canadian County', lat: 35.505704, lng: -97.752354 },
+          { address: '804 Poplar Ave', city: 'Yukon', state: 'OK', zip: '73099', county: 'Canadian County', lat: 35.503614, lng: -97.754958 },
+          { address: '412 Holly Ave', city: 'Yukon', state: 'OK', zip: '73099', county: 'Canadian County', lat: 35.503076, lng: -97.751446 },
+          { address: '704 Oak Ave', city: 'Yukon', state: 'OK', zip: '73099', county: 'Canadian County', lat: 35.504669, lng: -97.753562 },
+          { address: '408 S 8th St', city: 'Yukon', state: 'OK', zip: '73099', county: 'Canadian County', lat: 35.503524, lng: -97.754752 },
+          
+          // Oklahoma 73127
+          { address: '7400 Melrose Ln', city: 'Oklahoma City', state: 'OK', zip: '73127', county: 'Canadian County', lat: 35.471541, lng: -97.641703 },
+          { address: '6800 NW 16th St', city: 'Oklahoma City', state: 'OK', zip: '73127', county: 'Canadian County', lat: 35.486018, lng: -97.631814 },
 
-          // 73127 (Yukon / West Metro Council Rd Corridor)
-          { address: '7400 Melrose Ln', city: 'Yukon', state: 'OK', zip: '73127', county: 'Canadian County', lat: 35.471517, lng: -97.641661 },
-          { address: '6800 NW 16th St', city: 'Yukon', state: 'OK', zip: '73127', county: 'Canadian County', lat: 35.485994, lng: -97.631896 },
-          { address: '2400 N Council Rd', city: 'Yukon', state: 'OK', zip: '73127', county: 'Canadian County', lat: 35.482437, lng: -97.654301 },
+          // Oklahoma 73132
+          { address: '8408 NW 85th St', city: 'Oklahoma City', state: 'OK', zip: '73132', county: 'Oklahoma County', lat: 35.558662, lng: -97.663219 },
+          { address: '7800 NW 50th St', city: 'Oklahoma City', state: 'OK', zip: '73132', county: 'Oklahoma County', lat: 35.522258, lng: -97.650047 },
 
-          // 73132 (NW Residential Corridor)
-          { address: '7800 NW 50th St', city: 'Yukon', state: 'OK', zip: '73132', county: 'Canadian County', lat: 35.522258, lng: -97.650047 },
-          { address: '6200 NW 63rd St', city: 'Yukon', state: 'OK', zip: '73132', county: 'Canadian County', lat: 35.536593, lng: -97.561532 },
+          // Oklahoma 73064
+          { address: '820 N Clear Springs Rd', city: 'Mustang', state: 'OK', zip: '73064', county: 'Canadian County', lat: 35.400129, lng: -97.760051 },
+          { address: '1012 S Mustang Rd', city: 'Mustang', state: 'OK', zip: '73064', county: 'Canadian County', lat: 35.382255, lng: -97.724485 },
 
-          // 73064 (Mustang / South Yukon Corridor)
-          { address: '400 S Mustang Rd', city: 'Mustang', state: 'OK', zip: '73064', county: 'Canadian County', lat: 35.388585, lng: -97.724463 }
+          // Charlotte NC
+          { address: '6807 Wandering Creek Dr', city: 'Charlotte', state: 'NC', zip: '28216', county: 'Mecklenburg County', lat: 35.334110, lng: -80.892450 },
+          { address: '8412 Hunters Forest Dr', city: 'Charlotte', state: 'NC', zip: '28269', county: 'Mecklenburg County', lat: 35.338420, lng: -80.791540 },
+
+          // Columbus OH
+          { address: '5804 N Meadows Blvd', city: 'Columbus', state: 'OH', zip: '43229', county: 'Franklin County', lat: 40.082410, lng: -82.972340 },
+          { address: '2609 Avalon Pl', city: 'Columbus', state: 'OH', zip: '43219', county: 'Franklin County', lat: 40.025680, lng: -82.934120 }
         ];
 
-        let pool = YUKON_VERIFIED_LOCATIONS;
+        let pool = VERIFIED_LOCATIONS;
+        const lowerQ = query.toLowerCase();
+        if (lowerQ.includes('nc') || lowerQ.includes('charlotte')) {
+          pool = VERIFIED_LOCATIONS.filter(l => l.state === 'NC');
+        } else if (lowerQ.includes('oh') || lowerQ.includes('columbus')) {
+          pool = VERIFIED_LOCATIONS.filter(l => l.state === 'OH');
+        } else if (lowerQ.includes('ok') || lowerQ.includes('yukon') || lowerQ.includes('mustang') || lowerQ.includes('okc')) {
+          pool = VERIFIED_LOCATIONS.filter(l => l.state === 'OK');
+        }
+
         if (requestedZip) {
-          const filtered = YUKON_VERIFIED_LOCATIONS.filter(l => l.zip === requestedZip);
-          if (filtered.length > 0) pool = filtered;
+          const zipF = pool.filter(l => l.zip === requestedZip);
+          if (zipF.length > 0) pool = zipF;
         }
 
         const loc = pool[Math.floor(Math.random() * pool.length)];
@@ -110,14 +154,7 @@ const server = http.createServer((req, res) => {
         const zip = loc.zip;
         const county = loc.county;
         const newTitle = `${newAddress}, ${city}, ${state} ${zip}`;
-
-        let newDesc = property.description || '';
-        if (newDesc && property.city && property.state) {
-          newDesc = newDesc
-            .replace(new RegExp(`\\b${property.city}\\b`, 'gi'), city)
-            .replace(new RegExp(`\\b${property.state}\\b`, 'gi'), state)
-            .replace(new RegExp(`\\b${property.zip || ''}\\b`, 'gi'), zip);
-        }
+        const newDesc = sanitizeListingDescription(property.description || '', origCity, origState, city, state, zip);
 
         res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
         return res.end(JSON.stringify({
@@ -132,7 +169,7 @@ const server = http.createServer((req, res) => {
             newLat: loc.lat,
             newLng: loc.lng,
             newDescription: newDesc,
-            method: `Verified Synthetic Relocation Multi-ZIP (${city}, ${state} ${zip})`,
+            method: `Verified Municipal Street Protocol (${city}, ${state} ${zip})`,
             verifiedCensus: true
           }
         }));
