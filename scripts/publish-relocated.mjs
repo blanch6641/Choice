@@ -59,11 +59,26 @@ const TARGETS = targetArgs.length > 0 ? targetArgs : [getArg('target', 'Matthews
 const STATUS = getArg('status', 'private_placement'); // default: private_placement for client links
 
 // Spec filters
-const FILTER_BEDS = getArg('beds', null) ? parseInt(getArg('beds'), 10) : null;
+const bedsArg = getArg('beds', null);
+let FILTER_BEDS = null;
+let FILTER_BEDS_MIN = (getArg('beds-min', null) || getArg('bed-min', null)) ? parseInt(getArg('beds-min', null) || getArg('bed-min', null), 10) : null;
+let FILTER_BEDS_MAX = (getArg('beds-max', null) || getArg('bed-max', null)) ? parseInt(getArg('beds-max', null) || getArg('bed-max', null), 10) : null;
+
+if (bedsArg) {
+  if (bedsArg.includes('-')) {
+    const parts = bedsArg.split('-').map(x => parseInt(x.trim(), 10));
+    FILTER_BEDS_MIN = parts[0];
+    FILTER_BEDS_MAX = parts[1];
+  } else {
+    FILTER_BEDS = parseInt(bedsArg, 10);
+  }
+}
+
 const FILTER_BATHS_MIN = getArg('baths-min', null) ? parseFloat(getArg('baths-min')) : null;
 const FILTER_BATHS_MAX = getArg('baths-max', null) ? parseFloat(getArg('baths-max')) : null;
 const FILTER_SQFT_MIN = getArg('sqft-min', null) ? parseInt(getArg('sqft-min'), 10) : null;
 const FILTER_SQFT_MAX = getArg('sqft-max', null) ? parseInt(getArg('sqft-max'), 10) : null;
+const FILTER_HOUSES_ONLY = args.includes('--houses') || args.includes('--houses-only') || getArg('type', null) === 'house' || getArg('type', null) === 'single_family';
 
 // Price targeting options
 const EXACT_RENT = (getArg('rent', null) || getArg('price', null)) ? parseInt(getArg('rent', null) || getArg('price', null), 10) : null;
@@ -124,6 +139,10 @@ function toTitleCase(str) {
     .replace(/\bWay\b/gi, 'Way')
     .replace(/\bCir\b/gi, 'Cir')
     .replace(/\bPkwy\b/gi, 'Pkwy')
+    .replace(/\bNw\b/gi, 'NW')
+    .replace(/\bSw\b/gi, 'SW')
+    .replace(/\bNe\b/gi, 'NE')
+    .replace(/\bSe\b/gi, 'SE')
     .replace(/\bN\b/gi, 'N')
     .replace(/\bS\b/gi, 'S')
     .replace(/\bE\b/gi, 'E')
@@ -132,9 +151,15 @@ function toTitleCase(str) {
 
 // ── Dynamic US Census TIGER Address Discovery for ANY City / State ─────────────
 const RESIDENTIAL_STEMS = [
+  // Oklahoma City residential stems
+  '2400 NW 16th St', '3200 N McKinley Ave', '1800 NW 38th St', '2800 NW 22nd St',
+  '1400 SW 59th St', '2100 N Blackwelder Ave', '3500 N Portland Ave', '2700 NW 50th St',
+  '1900 NW 11th St', '2200 SW 64th St', '3100 NW 48th St',
+  // Charlotte & Huntersville residential stems
   '200 Gilead Rd', '300 Mount Holly-Huntersville Rd', '400 N Church St', '600 Dallas St',
   '100 Holbrook St', '400 Queens Rd', '700 Providence Rd', '1200 Sharon Rd',
   '800 Selwyn Ave', '500 East Blvd', '900 Park Rd', '1100 Colony Rd',
+  // Universal residential stems
   '600 Oak St', '1200 Maple Ave', '800 Elm St', '400 Cedar Ave', 
   '1500 Pine St', '700 Willow Dr', '1100 Highland Rd', '900 Meadow Ln', 
   '1400 Forest St', '500 Ridge Rd', '1000 Magnolia Dr', '850 Cypress Way',
@@ -328,8 +353,9 @@ function assignPropertyRent(index, totalCount, beds, baths, sqft, state) {
   if (RENT_MIN && RENT_MAX) {
     if (totalCount <= 1) return RENT_MIN;
     const step = (RENT_MAX - RENT_MIN) / (totalCount - 1);
-    let val = Math.round((RENT_MIN + (step * index)) / 25) * 25;
-    if (val % 50 === 0) val -= 5;
+    let val = Math.round(RENT_MIN + (step * index));
+    if (val > RENT_MAX) val = RENT_MAX;
+    if (val < RENT_MIN) val = RENT_MIN;
     return val;
   }
 
@@ -433,8 +459,8 @@ async function main() {
   }
 
   const validProps = [];
-  console.log(`  Scanning sitemap for active homes (beds: ${FILTER_BEDS || 'any'}, Zero photo count gate)...`);
-  for (const u of candidateUrlsToScan.slice(0, 1000)) {
+  console.log(`  Scanning sitemap for active homes (beds: ${FILTER_BEDS || (FILTER_BEDS_MIN + '-' + FILTER_BEDS_MAX) || 'any'}, Zero photo count gate)...`);
+  for (const u of candidateUrlsToScan.slice(0, 2500)) {
     // If source-location filter was requested, match URL
     if (SOURCE_LOCATION) {
       const cleanLoc = SOURCE_LOCATION.toLowerCase().replace(/[\s,]+/g, '-');
@@ -463,10 +489,17 @@ async function main() {
       const bathsNum = Number(p.bathrooms);
       const sqftNum = Number(p.sqFtTotalLiving) || 0;
       if (FILTER_BEDS && bedsNum !== FILTER_BEDS) continue;
+      if (FILTER_BEDS_MIN && bedsNum < FILTER_BEDS_MIN) continue;
+      if (FILTER_BEDS_MAX && bedsNum > FILTER_BEDS_MAX) continue;
       if (FILTER_BATHS_MIN && bathsNum < FILTER_BATHS_MIN) continue;
       if (FILTER_BATHS_MAX && bathsNum > FILTER_BATHS_MAX) continue;
       if (FILTER_SQFT_MIN && sqftNum && sqftNum < FILTER_SQFT_MIN) continue;
       if (FILTER_SQFT_MAX && sqftNum && sqftNum > FILTER_SQFT_MAX) continue;
+
+      if (FILTER_HOUSES_ONLY) {
+        const isTH = /townhome|townhouse|condo|apartment/i.test(p.description || '') || /TOWN|CONDO|APARTMENT/i.test(p.propertyType || '');
+        if (isTH) continue;
+      }
 
       validProps.push({ url: u, prop: p });
       if (validProps.length >= COUNT) break;
