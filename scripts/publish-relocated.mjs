@@ -56,7 +56,7 @@ for (let i = 0; i < args.length; i++) {
   }
 }
 const TARGETS = targetArgs.length > 0 ? targetArgs : [getArg('target', 'Matthews, NC')];
-const STATUS = getArg('status', 'private_placement'); // default: private_placement for client links
+const STATUS = 'private_placement'; // Enforced: All properties published via runner are strictly private_placement
 
 // Spec filters
 const bedsArg = getArg('beds', null);
